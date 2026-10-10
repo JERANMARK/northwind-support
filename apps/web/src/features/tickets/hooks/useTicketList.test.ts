@@ -27,7 +27,7 @@ describe('useTicketList', () => {
     const { result } = renderHook(() => useTicketList());
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
     });
 
     expect(getTickets).toHaveBeenCalledTimes(1);
@@ -50,5 +50,56 @@ describe('useTicketList', () => {
 
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data?.items).toHaveLength(1);
+  });
+
+  it('requests immediately when a non-search filter changes and keeps the status when the search is cleared', async () => {
+    const { result } = renderHook(() => useTicketList());
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => {
+      result.current.updateFilters({ status: 'InProgress' });
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(getTickets).toHaveBeenCalledTimes(2);
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'InProgress', page: 1 }),
+    );
+
+    act(() => {
+      result.current.updateFilters({ search: 'invoice' });
+    });
+
+    expect(getTickets).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(getTickets).toHaveBeenCalledTimes(3);
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'InProgress', search: 'invoice', page: 1 }),
+    );
+
+    act(() => {
+      result.current.updateFilters({ search: '' });
+    });
+
+    expect(getTickets).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(getTickets).toHaveBeenCalledTimes(4);
+    expect(getTickets).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'InProgress', search: '', page: 1 }),
+    );
   });
 });

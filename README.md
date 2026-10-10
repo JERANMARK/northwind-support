@@ -30,6 +30,10 @@ Full requirements are in **[`ASSIGNMENT_CANDIDATE.md`](ASSIGNMENT_CANDIDATE.md)*
 - **Out of scope:** registration, password reset, roles, OAuth/SSO, refresh tokens, MFA,
   notifications, CI, caching, visual redesign. Mention them under *Known limitations* instead.
 
+### Task 1 root cause and fix
+
+The root cause of DEFECT-117 was in the React list hook: the request effect only re-ran when `search`, `page`, or `pageSize` changed, so status and other non-search filters never caused a fetch. That left the UI with stale filter state when the user cleared or changed search text. The fix makes every filter change trigger a fetch, keeps the debounced search delay for text entry, and uses the latest filter values in the request instead of a stale closure. On the server side, the query now applies the database filters before counting and paging so the total count and page results stay correct for the filtered set.
+
 ### Submission
 
 1. Update this **README** with what you built, your design decisions (chosen, rejected and why),
