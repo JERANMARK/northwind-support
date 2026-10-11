@@ -1,5 +1,11 @@
+using System.Text;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 using SupportDesk.Application;
+using SupportDesk.Application.Contracts.Auth;
+using SupportDesk.Application.Contracts.Tickets;
 using SupportDesk.Infrastructure;
 using SupportDesk.Presentation.Extensions;
 using SupportDesk.Presentation.Filters;
@@ -27,6 +33,34 @@ builder.Services.AddCors(options => options.AddPolicy(
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.Configure<SlaOptions>(builder.Configuration.GetSection("Sla"));
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        var jwtOptions = builder.Configuration.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidAudience = jwtOptions.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey))
+        };
+    });
+
+builder.Services.AddHttpContextAccessor();
+
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
+
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 
@@ -44,6 +78,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(FrontendCorsPolicy);
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

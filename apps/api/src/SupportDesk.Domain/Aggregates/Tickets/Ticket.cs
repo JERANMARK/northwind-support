@@ -111,4 +111,24 @@ public sealed class Ticket : AggregateRoot
         AssignedAgentId = agentId;
         UpdatedAtUtc = nowUtc;
     }
+
+    public void SetPriority(TicketPriority priority, DateTime nowUtc)
+    {
+        Priority = priority;
+        UpdatedAtUtc = nowUtc;
+    }
+
+    public void SetDueAtUtc(DateTime? dueAtUtc, DateTime nowUtc)
+    {
+        DueAtUtc = dueAtUtc;
+        UpdatedAtUtc = nowUtc;
+    }
+
+    public void Escalate(TicketPriority newPriority, DateTime? newDueAtUtc, int? agentId, DateTime nowUtc)
+    {
+        Priority = newPriority;
+        DueAtUtc = newDueAtUtc;
+        AssignedAgentId = agentId;
+        UpdatedAtUtc = nowUtc;
+    }
 }

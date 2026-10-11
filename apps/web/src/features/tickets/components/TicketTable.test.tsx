@@ -33,3 +33,27 @@ describe('TicketTable', () => {
     expect(screen.getByText('Within SLA')).toBeInTheDocument();
   });
 });
+
+describe('SlaCell', () => {
+  it('renders all SLA states with distinguishable labels', () => {
+    render(
+      <MemoryRouter>
+        <TicketTable
+          tickets={[
+            ticketListItem({ id: 1, slaStatus: 'Met' as const }),
+            ticketListItem({ id: 2, slaStatus: 'Breached' as const }),
+            ticketListItem({ id: 3, slaStatus: 'AtRisk' as const }),
+            ticketListItem({ id: 4, slaStatus: 'WithinSla' as const }),
+            ticketListItem({ id: 5, slaStatus: 'NotApplicable' as const }),
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('Met')).toBeInTheDocument();
+    expect(screen.getByText('Breached')).toBeInTheDocument();
+    expect(screen.getByText('At risk')).toBeInTheDocument();
+    expect(screen.getByText('Within SLA')).toBeInTheDocument();
+    expect(screen.getByText('No SLA')).toBeInTheDocument();
+  });
+});

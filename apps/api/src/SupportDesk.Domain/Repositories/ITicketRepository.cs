@@ -14,5 +14,9 @@ public interface ITicketRepository
     /// <summary>The next unused ticket reference, e.g. TCK-0041.</summary>
     Task<string> NextReferenceAsync(CancellationToken ct);
 
+    Task<Dictionary<int, int>> GetAllOpenCountsAsync(IReadOnlyCollection<int> agentIds, CancellationToken ct);
+
     Task AddAsync(Ticket ticket, CancellationToken ct);
+
+    Task AddEscalationAsync(TicketEscalation escalation, CancellationToken ct);
 }

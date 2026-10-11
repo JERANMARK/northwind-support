@@ -2,6 +2,7 @@ import type {
   CreateTicketPayload,
   PagedResult,
   TicketDetail,
+  TicketEscalation,
   TicketFilters,
   TicketListItem,
   TicketStatus,
@@ -43,6 +44,8 @@ export const ticketsApi = {
 
   getTicket: (id: number) => request<TicketDetail>(`/tickets/${id}`),
 
+  getTicketEscalations: (id: number) => request<TicketEscalation[]>(`/tickets/${id}/escalations`),
+
   createTicket: (payload: CreateTicketPayload) =>
     request<TicketDetail>('/tickets', {
       method: 'POST',
@@ -59,5 +62,11 @@ export const ticketsApi = {
     request<TicketDetail>(`/tickets/${id}/assignment`, {
       method: 'PATCH',
       body: JSON.stringify({ agentId }),
+    }),
+
+  escalateTicket: (id: number, payload: { reason: string; escalatedBy: string }) =>
+    request<TicketDetail>(`/tickets/${id}/escalate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 };

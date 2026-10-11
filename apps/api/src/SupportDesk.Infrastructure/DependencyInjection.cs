@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SupportDesk.Application.Abstractions;
 using SupportDesk.Domain.Repositories;
+using SupportDesk.Infrastructure.Authentication;
 using SupportDesk.Infrastructure.Data;
 using SupportDesk.Infrastructure.Queries;
 using SupportDesk.Infrastructure.Repositories;
@@ -40,6 +41,9 @@ public static class DependencyInjection
         services.AddScoped<ICustomerQueries, CustomerQueries>();
         services.AddScoped<IAgentQueries, AgentQueries>();
         services.AddScoped<ICategoryQueries, CategoryQueries>();
+
+        services.AddScoped<IPasswordHasher, PasswordHasher>();
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
 
         services.AddScoped<SupportDbSeeder>();
 

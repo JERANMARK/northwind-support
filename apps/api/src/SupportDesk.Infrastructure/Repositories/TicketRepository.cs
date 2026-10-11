@@ -27,6 +27,25 @@ public sealed class TicketRepository(SupportDbContext db) : ITicketRepository
         return $"TCK-{lastId + 1:D4}";
     }
 
+    public async Task<Dictionary<int, int>> GetAllOpenCountsAsync(IReadOnlyCollection<int> agentIds, CancellationToken ct)
+    {
+        if (agentIds.Count == 0)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        return await db.Set<Ticket>()
+            .AsNoTracking()
+            .Where(t => agentIds.Contains(t.AssignedAgentId ?? -1))
+            .Where(t => t.Status != TicketStatus.Resolved && t.Status != TicketStatus.Closed)
+            .GroupBy(t => t.AssignedAgentId)
+            .Select(g => new { AgentId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AgentId!.Value, x => x.Count, ct);
+    }
+
     public async Task AddAsync(Ticket ticket, CancellationToken ct) =>
         await db.Set<Ticket>().AddAsync(ticket, ct);
+
+    public async Task AddEscalationAsync(TicketEscalation escalation, CancellationToken ct) =>
+        await db.Set<TicketEscalation>().AddAsync(escalation, ct);
 }

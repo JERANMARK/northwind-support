@@ -94,6 +94,147 @@ public sealed class TicketQueriesTests : IDisposable
         Assert.Equal("Northwind Traders", result.Items[0].Customer.Name);
     }
 
+    [Fact]
+    public async Task GetPagedAsync_FiltersBySlaStatus_NotApplicable()
+    {
+        var result = await _queries.GetPagedAsync(new TicketQuery
+        {
+            SlaStatus = SlaStatus.NotApplicable,
+            Page = 1,
+            PageSize = 20
+        }, CancellationToken.None);
+
+        Assert.Equal(4, result.TotalCount);
+        Assert.All(result.Items, item => Assert.Null(item.DueAtUtc));
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_FiltersBySlaStatus_Met()
+    {
+        SeedSlaTickets();
+
+        var result = await _queries.GetPagedAsync(new TicketQuery
+        {
+            SlaStatus = SlaStatus.Met,
+            Page = 1,
+            PageSize = 20
+        }, CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-3001", result.Items[0].Reference);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_FiltersBySlaStatus_Breached_IncludesLateResolvedAndUnresolvedPastDue()
+    {
+        SeedSlaTickets();
+
+        var result = await _queries.GetPagedAsync(new TicketQuery
+        {
+            SlaStatus = SlaStatus.Breached,
+            Page = 1,
+            PageSize = 20
+        }, CancellationToken.None);
+
+        Assert.Equal(2, result.TotalCount);
+        var references = result.Items.Select(i => i.Reference).ToList();
+        Assert.Contains("TCK-3002", references);
+        Assert.Contains("TCK-3003", references);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_FiltersBySlaStatus_AtRisk_IncludesExactBoundaryAndBelow()
+    {
+        SeedSlaTickets();
+
+        var result = await _queries.GetPagedAsync(new TicketQuery
+        {
+            SlaStatus = SlaStatus.AtRisk,
+            Page = 1,
+            PageSize = 20
+        }, CancellationToken.None);
+
+        Assert.Equal(2, result.TotalCount);
+        var references = result.Items.Select(i => i.Reference).ToList();
+        Assert.Contains("TCK-3004", references);
+        Assert.Contains("TCK-3005", references);
+    }
+
+    [Fact]
+    public async Task GetPagedAsync_FiltersBySlaStatus_WithinSla_ExcludesAtRiskBoundary()
+    {
+        SeedSlaTickets();
+
+        var result = await _queries.GetPagedAsync(new TicketQuery
+        {
+            SlaStatus = SlaStatus.WithinSla,
+            Page = 1,
+            PageSize = 20
+        }, CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Equal("TCK-3006", result.Items[0].Reference);
+    }
+
+    [Theory]
+    [InlineData(SlaStatus.NotApplicable)]
+    [InlineData(SlaStatus.Met)]
+    [InlineData(SlaStatus.Breached)]
+    [InlineData(SlaStatus.AtRisk)]
+    [InlineData(SlaStatus.WithinSla)]
+    public void SqlServerProvider_TranslatesAllSlaStatusQueriesToSql(SlaStatus status)
+    {
+        var options = new DbContextOptionsBuilder<SupportDbContext>()
+            .UseSqlServer("Server=unused;Database=unused")
+            .Options;
+
+        using var db = new SupportDbContext(options);
+        var queries = new TicketQueries(db, _clock);
+
+        var ticketsWithLabels = typeof(TicketQueries)
+            .GetMethod("TicketsWithLabels", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(queries, null)!;
+
+        var applyFilters = typeof(TicketQueries)
+            .GetMethod("ApplyFilters", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        var query = new TicketQuery { SlaStatus = status };
+        var filteredQuery = (IQueryable)applyFilters.Invoke(queries, new[] { ticketsWithLabels, query })!;
+
+        var sql = filteredQuery.ToQueryString();
+        Assert.NotEmpty(sql);
+        Assert.DoesNotContain("SlaEvaluator", sql);
+    }
+
+    private void SeedSlaTickets()
+    {
+        var customer = _db.Set<Customer>().First();
+        var category = _db.Set<Category>().First();
+
+        var met = Ticket.Raise("TCK-3001", "Met ticket", "Description", customer.Id, category.Id, TicketPriority.Medium, _clock.UtcNow.AddHours(-20));
+        met.SetDueAtUtc(_clock.UtcNow.AddHours(4), _clock.UtcNow.AddHours(-20));
+        met.ChangeStatus(TicketStatus.Resolved, _clock.UtcNow.AddHours(-1));
+
+        var breachedLate = Ticket.Raise("TCK-3002", "Breached late resolution", "Description", customer.Id, category.Id, TicketPriority.Medium, _clock.UtcNow.AddHours(-10));
+        breachedLate.SetDueAtUtc(_clock.UtcNow.AddHours(-2), _clock.UtcNow.AddHours(-10));
+        breachedLate.ChangeStatus(TicketStatus.Resolved, _clock.UtcNow.AddHours(-1));
+
+        var breachedPastDue = Ticket.Raise("TCK-3003", "Breached past due", "Description", customer.Id, category.Id, TicketPriority.Medium, _clock.UtcNow.AddHours(-10));
+        breachedPastDue.SetDueAtUtc(_clock.UtcNow.AddHours(-1), _clock.UtcNow.AddHours(-10));
+
+        var atRiskExact = Ticket.Raise("TCK-3004", "AtRisk exact 25 percent", "Description", customer.Id, category.Id, TicketPriority.Medium, _clock.UtcNow.AddHours(-18));
+        atRiskExact.SetDueAtUtc(_clock.UtcNow.AddHours(6), _clock.UtcNow.AddHours(-18));
+
+        var atRiskBelow = Ticket.Raise("TCK-3005", "AtRisk below 25 percent", "Description", customer.Id, category.Id, TicketPriority.Medium, _clock.UtcNow.AddHours(-19));
+        atRiskBelow.SetDueAtUtc(_clock.UtcNow.AddHours(5), _clock.UtcNow.AddHours(-19));
+
+        var withinSla = Ticket.Raise("TCK-3006", "WithinSla above 25 percent", "Description", customer.Id, category.Id, TicketPriority.Medium, _clock.UtcNow.AddHours(-17));
+        withinSla.SetDueAtUtc(_clock.UtcNow.AddHours(7), _clock.UtcNow.AddHours(-17));
+
+        _db.AddRange(met, breachedLate, breachedPastDue, atRiskExact, atRiskBelow, withinSla);
+        _db.SaveChanges();
+    }
+
     public void Dispose()
     {
         _db.Dispose();

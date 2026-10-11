@@ -1,0 +1,43 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Dependencies
+**/node_modules/
+
+# Git
+.git/
+.gitignore
+
+# Environment files
+.env
+.env.*
+
+# VS Code
+.vscode/
+
+# Web app (not needed for API image)
+apps/web/
+apps/web/**
+
+# IDE
+*.user
+*.suo
+*.vs/
+.idea/
+
+# Logs
+*.log
+
+# Test results
+**/TestResults/
+**/coverage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose*.yml

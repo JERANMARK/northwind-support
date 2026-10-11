@@ -45,7 +45,7 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQu
                 UpdatedAtUtc = x.Ticket.UpdatedAtUtc,
                 DueAtUtc = x.Ticket.DueAtUtc,
                 ResolvedAtUtc = x.Ticket.ResolvedAtUtc,
-                SlaStatus = SlaEvaluator.Evaluate(x.Ticket.DueAtUtc, x.Ticket.ResolvedAtUtc, now)
+                SlaStatus = SlaEvaluator.Evaluate(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc, x.Ticket.ResolvedAtUtc, now)
             })
             .ToListAsync(ct);
 
@@ -74,10 +74,32 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQu
                 UpdatedAtUtc = x.Ticket.UpdatedAtUtc,
                 DueAtUtc = x.Ticket.DueAtUtc,
                 ResolvedAtUtc = x.Ticket.ResolvedAtUtc,
-                SlaStatus = SlaEvaluator.Evaluate(x.Ticket.DueAtUtc, x.Ticket.ResolvedAtUtc, now)
+                SlaStatus = SlaEvaluator.Evaluate(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc, x.Ticket.ResolvedAtUtc, now)
             })
             .FirstOrDefaultAsync(ct);
     }
+
+    public async Task<IReadOnlyList<TicketEscalationDto>> GetEscalationsAsync(int ticketId, CancellationToken ct) =>
+        await db.Set<TicketEscalation>()
+            .AsNoTracking()
+            .Where(e => e.TicketId == ticketId)
+            .OrderByDescending(e => e.EscalatedAtUtc)
+            .ThenByDescending(e => e.Id)
+            .Select(e => new TicketEscalationDto
+            {
+                Id = e.Id,
+                TicketId = e.TicketId,
+                FromPriority = e.FromPriority,
+                ToPriority = e.ToPriority,
+                FromAgentId = e.FromAgentId,
+                ToAgentId = e.ToAgentId,
+                FromDueAtUtc = e.FromDueAtUtc,
+                ToDueAtUtc = e.ToDueAtUtc,
+                Reason = e.Reason,
+                EscalatedBy = e.EscalatedBy,
+                EscalatedAtUtc = e.EscalatedAtUtc
+            })
+            .ToListAsync(ct);
 
     public async Task<IReadOnlyList<TicketListItemDto>> GetForCustomerAsync(int customerId, CancellationToken ct)
     {
@@ -101,7 +123,7 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQu
                 UpdatedAtUtc = x.Ticket.UpdatedAtUtc,
                 DueAtUtc = x.Ticket.DueAtUtc,
                 ResolvedAtUtc = x.Ticket.ResolvedAtUtc,
-                SlaStatus = SlaEvaluator.Evaluate(x.Ticket.DueAtUtc, x.Ticket.ResolvedAtUtc, now)
+                SlaStatus = SlaEvaluator.Evaluate(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc, x.Ticket.ResolvedAtUtc, now)
             })
             .ToListAsync(ct);
     }
@@ -116,9 +138,10 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQu
         from agent in db.Set<Agent>().Where(a => a.Id == ticket.AssignedAgentId).DefaultIfEmpty()
         select new TicketWithLabels { Ticket = ticket, Customer = customer, Category = category, Agent = agent };
 
-    private static IQueryable<TicketWithLabels> ApplyFilters(IQueryable<TicketWithLabels> source, TicketQuery query)
+    private IQueryable<TicketWithLabels> ApplyFilters(IQueryable<TicketWithLabels> source, TicketQuery query)
     {
         var search = query.Search?.Trim();
+        var now = clock.UtcNow;
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -158,6 +181,52 @@ public sealed class TicketQueries(SupportDbContext db, IClock clock) : ITicketQu
         if (query.UnassignedOnly)
         {
             source = source.Where(x => x.Ticket.AssignedAgentId == null);
+        }
+
+        if (query.SlaStatus is not null)
+        {
+            var isSqlServer = db.Database.IsSqlServer();
+            var nowTicks = now.Ticks;
+
+            source = query.SlaStatus.Value switch
+            {
+                SlaStatus.NotApplicable => source.Where(x => x.Ticket.DueAtUtc == null),
+                SlaStatus.Met => source.Where(x =>
+                    x.Ticket.DueAtUtc != null &&
+                    x.Ticket.ResolvedAtUtc != null &&
+                    x.Ticket.ResolvedAtUtc <= x.Ticket.DueAtUtc),
+                SlaStatus.Breached => source.Where(x =>
+                    x.Ticket.DueAtUtc != null && (
+                        (x.Ticket.ResolvedAtUtc != null && x.Ticket.ResolvedAtUtc > x.Ticket.DueAtUtc) ||
+                        (x.Ticket.ResolvedAtUtc == null && x.Ticket.DueAtUtc < now))),
+                SlaStatus.AtRisk => isSqlServer
+                    ? source.Where(x =>
+                        x.Ticket.DueAtUtc != null &&
+                        x.Ticket.ResolvedAtUtc == null &&
+                        now <= x.Ticket.DueAtUtc &&
+                        x.Ticket.DueAtUtc > x.Ticket.CreatedAtUtc &&
+                        (long)EF.Functions.DateDiffMillisecond(now, x.Ticket.DueAtUtc.Value)! * 4L <= (long)EF.Functions.DateDiffMillisecond(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc.Value)!)
+                    : source.Where(x =>
+                        x.Ticket.DueAtUtc != null &&
+                        x.Ticket.ResolvedAtUtc == null &&
+                        now <= x.Ticket.DueAtUtc &&
+                        x.Ticket.DueAtUtc > x.Ticket.CreatedAtUtc &&
+                        (x.Ticket.DueAtUtc.Value.Ticks - nowTicks) * 4 <= (x.Ticket.DueAtUtc.Value.Ticks - x.Ticket.CreatedAtUtc.Ticks)),
+                SlaStatus.WithinSla => isSqlServer
+                    ? source.Where(x =>
+                        x.Ticket.DueAtUtc != null &&
+                        x.Ticket.ResolvedAtUtc == null &&
+                        now <= x.Ticket.DueAtUtc &&
+                        (x.Ticket.DueAtUtc <= x.Ticket.CreatedAtUtc ||
+                         (long)EF.Functions.DateDiffMillisecond(now, x.Ticket.DueAtUtc.Value)! * 4L > (long)EF.Functions.DateDiffMillisecond(x.Ticket.CreatedAtUtc, x.Ticket.DueAtUtc.Value)!))
+                    : source.Where(x =>
+                        x.Ticket.DueAtUtc != null &&
+                        x.Ticket.ResolvedAtUtc == null &&
+                        now <= x.Ticket.DueAtUtc &&
+                        (x.Ticket.DueAtUtc <= x.Ticket.CreatedAtUtc ||
+                         (x.Ticket.DueAtUtc.Value.Ticks - nowTicks) * 4 > (x.Ticket.DueAtUtc.Value.Ticks - x.Ticket.CreatedAtUtc.Ticks))),
+                _ => source
+            };
         }
 
         return source;

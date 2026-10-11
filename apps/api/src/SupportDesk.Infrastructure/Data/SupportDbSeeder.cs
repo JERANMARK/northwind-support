@@ -17,8 +17,10 @@ namespace SupportDesk.Infrastructure.Data;
 /// Every aggregate is built through its own behaviour. The two historical values no behaviour
 /// produces - a ticket's last update and its due date - are set through EF Core directly.
 /// </remarks>
-public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<SupportDbSeeder> logger)
+public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, IPasswordHasher passwordHasher, ILogger<SupportDbSeeder> logger)
 {
+    private const string DevPassword = "Password123!";
+
     /// <summary>Seeds the database, unless it already has tickets in it.</summary>
     public async Task SeedAsync(CancellationToken ct = default)
     {
@@ -33,6 +35,12 @@ public sealed class SupportDbSeeder(SupportDbContext db, IClock clock, ILogger<S
         var categories = SeedCategories();
         var customers = SeedCustomers(now);
         var agents = SeedAgents(now);
+
+        var passwordHash = passwordHasher.HashPassword(DevPassword);
+        foreach (var agent in agents)
+        {
+            agent.SetPasswordHash(passwordHash);
+        }
 
         db.AddRange(categories);
         db.AddRange(customers);

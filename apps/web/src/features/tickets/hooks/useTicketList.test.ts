@@ -102,4 +102,39 @@ describe('useTicketList', () => {
       expect.objectContaining({ status: 'InProgress', search: '', page: 1 }),
     );
   });
+
+  it('ignores stale responses from older filter requests', async () => {
+    const firstResult = page([ticketListItem({ id: 1, title: 'older result' })]);
+    const secondResult = page([ticketListItem({ id: 2, title: 'newer result' })]);
+
+    getTickets.mockReset();
+    getTickets.mockImplementationOnce(
+      () => new Promise((resolve) => setTimeout(() => resolve(firstResult), 50)),
+    );
+    getTickets.mockImplementationOnce(
+      () => new Promise((resolve) => setTimeout(() => resolve(secondResult), 10)),
+    );
+
+    const { result } = renderHook(() => useTicketList());
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    act(() => {
+      result.current.updateFilters({ status: 'Open' });
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(result.current.data?.items[0]?.title).toBe('newer result');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(40);
+    });
+
+    expect(result.current.data?.items[0]?.title).toBe('newer result');
+  });
 });

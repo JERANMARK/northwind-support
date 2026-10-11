@@ -31,14 +31,24 @@ export function useTicketList() {
   const [filters, setFilters] = useState<TicketFilters>(emptyFilters);
   const [state, setState] = useState<State>({ isLoading: true });
   const previousFiltersRef = useRef(filters);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(async (nextFilters: TicketFilters) => {
+    const requestId = ++requestIdRef.current;
     setState((current) => ({ ...current, isLoading: true, error: undefined }));
 
     try {
       const data = await ticketsApi.getTickets(nextFilters);
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
       setState({ isLoading: false, data, error: undefined });
     } catch (error) {
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+
       const message = error instanceof ApiError ? error.message : 'Unable to load tickets.';
       setState((current) => ({ ...current, isLoading: false, error: message }));
     }

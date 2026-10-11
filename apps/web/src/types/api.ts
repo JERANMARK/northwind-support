@@ -64,6 +64,27 @@ export interface TicketListItem {
   slaStatus: SlaStatus;
 }
 
+export interface TicketTriage {
+  priority: TicketPriority;
+  dueAtUtc: string | null;
+  assignedAgentId: number | null;
+  reason: string;
+}
+
+export interface TicketEscalation {
+  id: number;
+  ticketId: number;
+  fromPriority: TicketPriority;
+  toPriority: TicketPriority;
+  fromAgentId: number | null;
+  toAgentId: number | null;
+  fromDueAtUtc: string | null;
+  toDueAtUtc: string | null;
+  reason: string;
+  escalatedBy: string;
+  escalatedAtUtc: string;
+}
+
 export interface TicketDetail {
   id: number;
   reference: string;
@@ -79,6 +100,7 @@ export interface TicketDetail {
   dueAtUtc: string | null;
   resolvedAtUtc: string | null;
   slaStatus: SlaStatus;
+  triage?: TicketTriage;
 }
 
 /** Everything the ticket list screen can narrow the results by. */
@@ -150,4 +172,21 @@ export interface ProblemDetails {
   detail?: string;
   traceId?: string;
   errors?: Record<string, string[]>;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  expiresAtUtc: string;
+  agent: AuthenticatedAgent;
+}
+
+export interface AuthenticatedAgent {
+  id: number;
+  fullName: string;
+  email: string;
 }
